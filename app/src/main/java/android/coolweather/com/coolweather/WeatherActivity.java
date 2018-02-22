@@ -5,11 +5,14 @@ import android.coolweather.com.coolweather.gson.Forecast;
 import android.coolweather.com.coolweather.gson.Weather;
 import android.coolweather.com.coolweather.util.HttpUtil;
 import android.coolweather.com.coolweather.util.Utility;
+import android.graphics.Color;
+import android.os.Build;
 import android.preference.PreferenceManager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -18,6 +21,10 @@ import java.io.IOException;
 import okhttp3.Call;
 import okhttp3.Response;
 import okhttp3.Callback;
+import com.bumptech.glide.Glide;
+
+
+import static android.preference.PreferenceManager.getDefaultSharedPreferences;
 
 public class WeatherActivity extends AppCompatActivity {
     private ScrollView weatherLayout;
@@ -31,23 +38,29 @@ public class WeatherActivity extends AppCompatActivity {
     private TextView comfortText;
     private TextView carWashText;
     private TextView sportText;
-
+    private ImageView bingPicImg;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (Build.VERSION.SDK_INT>=21){
+            View decorView=getWindow().getDecorView();
+            decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+        }
         setContentView(R.layout.activity_weather);
+        bingPicImg=(ImageView)findViewById(R.id.bing_pic_img);
         weatherLayout = (ScrollView)findViewById(R.id.weather_layout);
         titleCity =(TextView)findViewById(R.id.title_city);
         titleUpdateTime=(TextView)findViewById(R.id.title_update_time);
         degreeText=(TextView)findViewById(R.id.degree_text);
-        weatherInfoText=(TextView)findViewById(R.id.weather_info_text);
         forecastLayout=(LinearLayout)findViewById(R.id.forecast_layout);
         aqiText=(TextView)findViewById(R.id.aqi_text);
         pm25Text=(TextView)findViewById(R.id.pm25_text);
         comfortText=(TextView)findViewById(R.id.comfort_text);
         carWashText=(TextView)findViewById(R.id.car_wash_text);
         sportText=(TextView)findViewById(R.id.sport_text);
-        SharedPreferences prefs= PreferenceManager.getDefaultSharedPreferences(this);
+        SharedPreferences prefs= getDefaultSharedPreferences(this);
         String weatherString=prefs.getString("weather",null);
         if(weatherString!=null){
             Weather weather= Utility.handleWeatherResponse(weatherString);
@@ -56,6 +69,12 @@ public class WeatherActivity extends AppCompatActivity {
             String weatherId = getIntent().getStringExtra("weather_id");
             weatherLayout.setVisibility(View.INVISIBLE);
             requesWeather(weatherId);
+        }
+        String bingPic=prefs.getString("bing_pic",null);
+        if(bingPic!=null){
+            Glide.with(this).load(bingPic).into(bingPicImg);
+        }else{
+            loadBingPic();
         }
     }
     public void requesWeather(final String weatherId){
@@ -69,7 +88,7 @@ public class WeatherActivity extends AppCompatActivity {
                     @Override
                     public void run() {
                         if (weather !=null&&"ok".equals(weather.status)){
-                            SharedPreferences.Editor editor=PreferenceManager.getDefaultSharedPreferences(WeatherActivity.this).edit();
+                            SharedPreferences.Editor editor= getDefaultSharedPreferences(WeatherActivity.this).edit();
                             editor.putString("weather",responseText);
                             editor.apply();
                             showWeatherInfo(weather);
@@ -91,18 +110,41 @@ public class WeatherActivity extends AppCompatActivity {
             }
 
         });
+        loadBingPic();
+    }
+    private void loadBingPic(){
+        String requestBingPic="http://guolin.tech/api/bing_pic";
+        HttpUtil.sendOkHttpRequest(requestBingPic, new Callback() {
+            @Override
+            public void onResponse(Call call,Response response) throws IOException{
+                final String bingPic=response.body().string();
+                SharedPreferences.Editor editor= PreferenceManager.getDefaultSharedPreferences(WeatherActivity.this).edit();
+                editor.putString("bing_pic",bingPic);
+                editor.apply();
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Glide.with(WeatherActivity.this).load(bingPic).into(bingPicImg);
+                    }
+                });
+
+            }
+            @Override
+            public void onFailure(Call call,IOException e ){
+                e.printStackTrace();
+            }
+        });
     }
     private void showWeatherInfo(Weather weather){
         String cityName=weather.basic.cityName;
-        String updateTime=weather.basic.update.updateTime.split("")[1];
+        String updateTime= "更新时间："+weather.basic.update.updateTime.split(" ")[1];
         String degree= weather.now.temperature+"℃";
         String weatherInfo=weather.now.more.info;
         titleCity.setText(cityName);
         titleUpdateTime.setText(updateTime);
-        degreeText.setText(degree);
-        weatherInfoText.setText(weatherInfo);
+        degreeText.setText("此刻："+degree+weatherInfo);
         forecastLayout.removeAllViews();
-        for (Forecast forecast:weather.forecastList){
+       for (Forecast forecast:weather.forecastList){
             View view= LayoutInflater.from(this).inflate(R.layout.forecast_item,forecastLayout,false);
             TextView dateText=(TextView) view.findViewById(R.id.date_text);
             TextView infoText=(TextView) view.findViewById(R.id.info_text);
@@ -110,8 +152,8 @@ public class WeatherActivity extends AppCompatActivity {
             TextView minText=(TextView)view.findViewById(R.id.min_text);
             dateText.setText(forecast.date);
             infoText.setText(forecast.more.info);
-            maxText.setText(forecast.temperature.max);
-            minText.setText(forecast.temperature.min);
+            maxText.setText(forecast.temperature.max+"℃");
+            minText.setText(forecast.temperature.min+"℃  至");
             forecastLayout.addView(view);
         }
         if(weather.aqi!=null){
